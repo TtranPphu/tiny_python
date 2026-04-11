@@ -1,6 +1,6 @@
 from logging import Logger, Handler, getLogger as get_logger
 
-from utils import path_str, fss, fsm
+from ..utils import path_str, fss, fsm
 
 
 class HasLogger:
@@ -12,11 +12,9 @@ class HasLogger:
         super().__init__(**kwargs)
 
     def __setup(self):
-        from logging import DEBUG
-
         fsm.ensure_dir_exists(self._log_folder())
         self.logger = self.__logger()
-        self.logger.debug("Logger initialized")
+        self.logger.debug(f"Logger({self._logger_name()}) initialized")
 
     def __logger(self) -> Logger:
         """Override this method to use custom logger."""
