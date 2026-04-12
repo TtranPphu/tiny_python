@@ -8,7 +8,6 @@ class HasLogger:
 
     def __init__(self, **kwargs):
         self.__setup()
-
         super().__init__(**kwargs)
 
     def __setup(self):
@@ -61,7 +60,8 @@ class HasLogger:
 
         steam_handler = StreamHandler()
         steam_formatter = DefaultSteamFormatter(
-            fmt="%(pathname)s:%(lineno)d | %(funcName)s | [%(levelname)s] | %(message)s"
+            fmt="%(pathname)s:%(lineno)d | "
+            f"{self.__class__.__name__}.%(funcName)s | [%(levelname)s] | %(message)s"
         )
         steam_handler.setFormatter(steam_formatter)
         steam_handler.setLevel(DEBUG)
@@ -78,7 +78,7 @@ class HasLogger:
         file_handler = TimedRotatingFileHandler(self._log_file(), when="midnight")
         file_formatter = DefaultFileFormatter(
             fmt="%(asctime)s | %(pathname)s:%(lineno)d | "
-            "%(funcName)s | [%(levelname)s] | %(message)s",
+            f"{self.__class__.__name__}.%(funcName)s | [%(levelname)s] | %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S %z",
         )
         file_handler.setFormatter(file_formatter)
@@ -87,6 +87,50 @@ class HasLogger:
         return file_handler
 
 
-class WillLogAttrChanges:
+class WillLogAttrChanges(HasLogger):
+    class ObservableList(list):
+        def __init__(self, parent: "WillLogAttrChanges", variable: str, *args):
+            super().__init__(*args)
+            self.__parent = parent
+            self.__variable = variable
+
+        def __setitem__(self, index, value):
+            if hasattr(self.__parent, "logger"):
+                self.__parent.logger.debug(f"{self.__variable}[{index}]: {value}")
+            super().__setitem__(index, value)
+
+        def append(self, value):
+            if hasattr(self.__parent, "logger"):
+                self.__parent.logger.debug(f"{self.__variable}.appended({value})")
+            super().append(value)
+
+    class ObservableDict(dict):
+        def __init__(self, parent: "WillLogAttrChanges", variable: str, **kwargs):
+            super().__init__(**kwargs)
+            self.__parent = parent
+            self.__variable = variable
+
+        def __setitem__(self, key, value):
+            if hasattr(self.__parent, "logger"):
+                self.__parent.logger.debug(f"{self.__variable}[{key}]: {value}")
+            super().__setitem__(key, value)
+
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            if isinstance(value, list):
+                print(f"Wrapping {key} with ObservableList")
+                kwargs[key] = self.ObservableList(self, key, value)
+            elif isinstance(value, dict):
+                print(f"Wrapping {key} with ObservableDict")
+                kwargs[key] = self.ObservableDict(self, key, **value)
+        super().__init__(**kwargs)
+
     def __setattr__(self, name, value):
-        pass
+        if isinstance(value, list):
+            value = self.ObservableList(self, name, value)
+        elif isinstance(value, dict):
+            value = self.ObservableDict(self, name, **value)
+        if hasattr(self, "logger"):
+            self.logger.debug(f"{name}: {value}")
+        super().__setattr__(name, value)
+
