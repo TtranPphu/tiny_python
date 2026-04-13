@@ -1,6 +1,6 @@
 from logging import Logger, Handler, Formatter, getLogger as get_logger
 
-from ..utils import path_str, fss, fsm
+from ..utils import path_str, file_system_status as fss, file_system_manipulation as fsm
 
 
 class DefaultLogger(Logger):
@@ -10,11 +10,11 @@ class DefaultLogger(Logger):
     def _log(self, *args, **kwargs):
         import traceback
 
+        stack = traceback.extract_stack()
         stacklevel = kwargs.pop("stacklevel", 1)
         stacklevel += 1
-        stack = traceback.extract_stack()[:-2]
 
-        for frame in reversed(stack):
+        for frame in reversed(stack[:-2]):
             if frame.filename != __file__:
                 break
             stacklevel += 1

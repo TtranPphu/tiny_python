@@ -1,13 +1,25 @@
 from .controls import controls
 from .file_system import (
-    file_system_status as fss,
-    file_system_manipulation as fsm,
+    file_system_manipulation,
+    file_system_status,
+)
+from .no_exception import (
+    CriticalException,
+    ErrorException,
+    IgnoredException,
+    no_exception,
+    WarningException,
 )
 from .prelude import path_str
 
 __all__ = [
     "controls",
-    "fsm",
-    "fss",
+    "CriticalException",
+    "ErrorException",
+    "file_system_manipulation",
+    "file_system_status",
+    "IgnoredException",
+    "no_exception",
     "path_str",
+    "WarningException",
 ]
