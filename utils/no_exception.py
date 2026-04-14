@@ -1,5 +1,5 @@
 from functools import wraps
-from typing import Callable, TypeVar
+from typing import Callable, TypeVar, Optional
 
 
 R = TypeVar("R")
@@ -30,10 +30,10 @@ class no_exception:
         """
         from functools import partial
 
-        print_stack = partial(no_exception.print_stack, dummy=None)
+        print_stack = partial(no_exception.print_stack, _as=None)
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def decorator(*args, **kwargs):
             from sys import exit
 
             result = no_exception.try_execute(func)(*args, **kwargs)
@@ -42,7 +42,7 @@ class no_exception:
 
             return result
 
-        return wrapper
+        return decorator
 
     def critical_error_for_exception(func: Callable[..., R]) -> Callable[..., R]:
         """
@@ -51,10 +51,10 @@ class no_exception:
         """
         from functools import partial
 
-        print_stack = partial(no_exception.print_stack, dummy=CriticalException())
+        print_stack = partial(no_exception.print_stack, _as=CriticalException())
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def decorator(*args, **kwargs):
             from sys import exit
 
             result = no_exception.try_execute(func)(*args, **kwargs)
@@ -63,7 +63,7 @@ class no_exception:
 
             return result
 
-        return wrapper
+        return decorator
 
     @staticmethod
     def warning_for_exception(func: Callable[..., None]) -> Callable[..., None]:
@@ -73,14 +73,14 @@ class no_exception:
         """
         from functools import partial
 
-        print_stack = partial(no_exception.print_stack, dummy=WarningException())
+        print_stack = partial(no_exception.print_stack, _as=WarningException())
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def decorator(*args, **kwargs):
             result = no_exception.try_execute(func)(*args, **kwargs)
             print_stack(result) if isinstance(result, Exception) else None
 
-        return wrapper
+        return decorator
 
     @staticmethod
     def ignore_exception(func: Callable[..., None]) -> Callable[..., None]:
@@ -90,14 +90,14 @@ class no_exception:
         """
         from functools import partial
 
-        print_stack = partial(no_exception.print_stack, dummy=IgnoredException())
+        print_stack = partial(no_exception.print_stack, _as=IgnoredException())
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def decorator(*args, **kwargs):
             result = no_exception.try_execute(func)(*args, **kwargs)
             print_stack(result) if isinstance(result, Exception) else None
 
-        return wrapper
+        return decorator
 
     @staticmethod
     def default_for_exception(default: R):
@@ -107,9 +107,9 @@ class no_exception:
         """
         from functools import partial
 
-        print_stack = partial(no_exception.print_stack, dummy=WarningException())
+        print_stack = partial(no_exception.print_stack, _as=WarningException())
 
-        def wrapper(func: Callable[..., R]) -> Callable[..., R]:
+        def decorator(func: Callable[..., R]) -> Callable[..., R]:
             @wraps(func)
             def inner(*args, **kwargs):
                 result = no_exception.try_execute(func)(*args, **kwargs)
@@ -119,21 +119,21 @@ class no_exception:
 
             return inner
 
-        return wrapper
+        return decorator
 
     @staticmethod
     def try_execute(func: Callable[..., R]) -> Callable[..., R | Exception]:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def decorator(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
             except Exception as exception:
                 return exception
 
-        return wrapper
+        return decorator
 
     @staticmethod
-    def print_stack(exception: Exception, dummy: Exception = Exception()):
+    def print_stack(exception: Exception, _as: Optional[Exception] = None):
         from types import FrameType
         from .file_system import file_system_status as fss
         from inspect import getargvalues
@@ -149,18 +149,21 @@ class no_exception:
         __WRN = f"{Back.YELLOW}{Fore.WHITE}"
         __IGN = f"{Back.RESET}{Fore.RESET}{Style.DIM}"
 
+        if _as is None:
+            _as = type(exception)()
+
         def format(message: str) -> str:
             from re import sub
 
             return sub(r" +", " ", message).replace("\n", " ")
 
-        if isinstance(dummy, CriticalException):
+        if isinstance(_as, CriticalException):
             header_style = __CRT
             style = __DCRT
-        elif isinstance(dummy, WarningException):
+        elif isinstance(_as, WarningException):
             header_style = __WRN
             style = __DWRN
-        elif isinstance(dummy, IgnoredException):
+        elif isinstance(_as, IgnoredException):
             header_style = __IGN
             style = __DIGN
         else:
@@ -178,7 +181,12 @@ class no_exception:
         while trace:
             frame = trace.tb_frame
             fn_name = frame.f_code.co_name
-            frames.append(frame) if fn_name not in ["wrapper", "trace"] else None
+            frames.append(frame) if fn_name not in [
+                "decorator",
+                "trace",
+                "inner",
+                "outter",
+            ] else None
             trace = trace.tb_next
 
         for frame in reversed(frames):

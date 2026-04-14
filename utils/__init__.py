@@ -1,3 +1,4 @@
+from .cavemen_debuger import cavemen_debuger
 from .controls import controls
 from .file_system import (
     file_system_manipulation,
@@ -13,6 +14,7 @@ from .no_exception import (
 from .prelude import path_str
 
 __all__ = [
+    "cavemen_debuger",
     "controls",
     "CriticalException",
     "ErrorException",
