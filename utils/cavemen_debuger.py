@@ -92,7 +92,7 @@ class cavemen_debuger:
         frame = frames[0]
 
         message = __LOG_PATTERN.format(
-            file=frame.filename.replace(fss.cwd(), ""),
+            file=fss.rel(frame.filename),
             line=frame.lineno,
             func=frame.function,
             level=log_level,

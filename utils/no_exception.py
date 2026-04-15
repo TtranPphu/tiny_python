@@ -190,7 +190,7 @@ class no_exception:
             trace = trace.tb_next
 
         for frame in reversed(frames):
-            file_name = frame.f_code.co_filename.replace(fss.cwd(), "./", 1)
+            file_name = fss.rel(frame.f_code.co_filename)
             line_no = frame.f_lineno
             fn_name = frame.f_code.co_name
             _fn = getargvalues(frame)
