@@ -5,6 +5,8 @@ from ..utils import (
 )
 
 from logging import Logger, Handler, Formatter, getLogger as get_logger
+from pandas import DataFrame
+from typing import Optional
 
 
 class DefaultLogger(Logger):
@@ -119,152 +121,188 @@ class HasLogger:
 
 
 class WillLogAttrChanges(HasLogger):
-    from pandas import DataFrame
-
-    _S: dict[type, type]
-    _M: dict[type, type]
-    _F: dict[type, type]
+    _ObservableMappings: dict[type, type]
+    _ObservableFrames: dict[type, type]
+    _ObservableSequences: dict[type, type]
 
     @classmethod
-    def wrap(cls, manager: "WillLogAttrChanges", variable: str, value):
+    def wrap(cls, value, observer: "WillLogAttrChanges", variable: str):
         def __log(t):
-            if hasattr(manager, "logger"):
-                # manager.logger.debug(f"Wrapping {variable} as {t}")
+            msg = (
+                f"Wrapping {variable} as "
+                f"{t}(observer={observer.__class__.__name__}<{id(observer)}>)"
+            )
+            if hasattr(observer, "logger"):
+                observer.logger.debug(msg)
                 pass
 
-        if (__t := type(value)) in cls._M:
+        if (__type := type(value)) in cls._ObservableMappings:
             for k, v in value.items():
-                value[k] = cls.wrap(manager, f"{variable}[{k}]", v)
-            __log(cls._M[__t].__name__)
-            return cls._M[__t](manager, variable, **value)
-        elif (__t := type(value)) in cls._F:
+                value[k] = cls.wrap(v, observer, f"{variable}[{k}]")
+            CustomMapping = cls._ObservableMappings[__type]
+            __log(CustomMapping.__name__)
+            return CustomMapping(**value, observer=observer, variable=variable)
+        elif __type in cls._ObservableFrames:
             for c, v in value.items():
-                value[c] = cls.wrap(manager, f"{variable}[{c}]", v)
-            __log(cls._F[__t].__name__)
-            return cls._F[__t](manager, variable, value)
-        elif (__t := type(value)) in cls._S:
+                value[c] = cls.wrap(observer, f"{variable}[{c}]", v)
+            CustomFrame = cls._ObservableFrames[__type]
+            __log(CustomFrame.__name__)
+            return CustomFrame(value, observer=observer, variable=variable)
+        elif __type in cls._ObservableSequences:
             for i, v in enumerate(value):
-                value[i] = cls.wrap(manager, f"{variable}[{i}]", v)
-            __log(cls._S[__t].__name__)
-            return cls._S[__t](manager, variable, *value)
+                value[i] = cls.wrap(v, observer, f"{variable}[{i}]")
+            CustomSequence = cls._ObservableSequences[__type]
+            __log(CustomSequence.__name__)
+            return CustomSequence(*value, observer=observer, variable=variable)
         return value
 
     class ObservableList(list):
-        def __init__(self, manager: "WillLogAttrChanges", variable: str, *args):
-            super().__init__(*args)
-            self.__manager = manager
-            self.__variable = variable
+        __observer: Optional["WillLogAttrChanges"]
+
+        def __init__(self, *args, **kwargs):
+            self.__observer = kwargs.pop("observer", None)
+            self.__variable = kwargs.pop("variable", r"_")
+            super().__init__(*args, **kwargs)
 
         def __setitem__(self, index, value):
-            value = self.__manager.wrap(
-                manager=self.__manager,
-                variable=f"{self.__variable}[{index}]",
+            if self.__observer is None:
+                return super().__setitem__(index, value)
+
+            value = self.__observer.wrap(
                 value=value,
+                observer=self.__observer,
+                variable=f"{self.__variable}[{index}]",
             )
-            if hasattr(self.__manager, "logger"):
-                self.__manager.logger.debug(f"{self.__variable}[{index}] = {value}")
-            super().__setitem__(index, value)
+            if hasattr(self.__observer, "logger"):
+                self.__observer.logger.debug(f"{self.__variable}[{index}] = {value}")
+            return super().__setitem__(index, value)
 
         def append(self, value):
-            value = self.__manager.wrap(
-                manager=self.__manager,
-                variable=f"{self.__variable}[{len(self)}]",
+            if self.__observer is None:
+                return super().append(value)
+
+            value = self.__observer.wrap(
                 value=value,
+                observer=self.__observer,
+                variable=f"{self.__variable}[{len(self)}]",
             )
-            if hasattr(self.__manager, "logger"):
-                self.__manager.logger.debug(f"{self.__variable}[{len(self)}] = {value}")
-            super().append(value)
+            if hasattr(self.__observer, "logger"):
+                self.__observer.logger.debug(
+                    f"{self.__variable}[{len(self)}] = {value}"
+                )
+            return super().append(value)
 
     class ObservableDict(dict):
-        def __init__(self, manager: "WillLogAttrChanges", variable: str, **kwargs):
-            super().__init__(**kwargs)
-            self.__manager = manager
-            self.__variable = variable
+        __observer: Optional["WillLogAttrChanges"]
+
+        def __init__(self, *args, **kwargs):
+            self.__observer = kwargs.pop("observer", None)
+            self.__variable = kwargs.pop("variable", r"_")
+            super().__init__(*args, **kwargs)
 
         def __setitem__(self, key, value):
-            value = self.__manager.wrap(
-                manager=self.__manager,
-                variable=f"{self.__variable}[{key}]",
+            if self.__observer is None:
+                return super().__setitem__(key, value)
+
+            value = self.__observer.wrap(
                 value=value,
+                observer=self.__observer,
+                variable=f"{self.__variable}[{key}]",
             )
-            if hasattr(self.__manager, "logger"):
-                self.__manager.logger.debug(f"{self.__variable}[{key}] = {value}")
-            super().__setitem__(key, value)
+            if hasattr(self.__observer, "logger"):
+                self.__observer.logger.debug(f"{self.__variable}[{key}] = {value}")
+            return super().__setitem__(key, value)
 
     class ObservableDataFrame(DataFrame):
-        class ObservableLocIndexer:
-            pass
+        __observer: Optional["WillLogAttrChanges"]
+        _metadata = [
+            "_ObservableDataFrame__observer",
+            "_ObservableDataFrame__variable",
+        ]
 
-        class ObservableILocIndexer:
-            pass
-
-        def __init__(
-            self, manager: "WillLogAttrChanges", variable: str, *args, **kwargs
-        ):
+        def __init__(self, *args, **kwargs):
+            __observer = kwargs.pop("observer", None)
+            __variable = kwargs.pop("variable", r"_")
             super().__init__(*args, **kwargs)
-            self.__manager = manager
-            self.__variable = variable
+            # DataFrame base class NDFrame also overrides __setattr__,
+            #   so we need to call object.__setattr__ dirrectly to bypass that
+            object.__setattr__(self, "_ObservableDataFrame__observer", __observer)
+            object.__setattr__(self, "_ObservableDataFrame__variable", __variable)
+
+        def __finalize__(self, other, method=None, **kwargs):
+            for attr in self._metadata:
+                object.__setattr__(self, attr, getattr(other, attr, None))
+            return self
+
+        @property
+        def _constructor(self):
+            return WillLogAttrChanges.ObservableDataFrame
 
         def isetitem(self, loc, value):
-            value = self.__manager.wrap(
-                manager=self.__manager,
-                variable=f"{self.__variable}[{loc}]",
+            if self.__observer is None:
+                return super().isetitem(loc, value)
+
+            value = self.__observer.wrap(
                 value=value,
+                observer=self.__observer,
+                variable=f"{self.__variable}[{loc}]",
             )
-            if hasattr(self.__manager, "logger"):
-                self.__manager.logger.debug(f"{self.__variable}[{loc}] = {value}")
+            if hasattr(self.__observer, "logger"):
+                self.__observer.logger.debug(f"{self.__variable}[{loc}] = {value}")
             return super().isetitem(loc, value)
 
         def __setitem__(self, key, value):
-            value = self.__manager.wrap(
-                manager=self.__manager,
-                variable=f"{self.__variable}[{key}]",
+            if self.__observer is None:
+                return super().__setitem__(key, value)
+
+            value = self.__observer.wrap(
                 value=value,
+                observer=self.__observer,
+                variable=f"{self.__variable}[{key}]",
             )
-            if hasattr(self.__manager, "logger"):
-                self.__manager.logger.debug(f"{self.__variable}[{key}] = {value}")
+            if hasattr(self.__observer, "logger"):
+                self.__observer.logger.debug(f"{self.__variable}[{key}] = {value}")
             super().__setitem__(key, value)
 
         def rename(self, *args, **kwargs):
-            if self.__manager.logger:
+            if self.__observer is None:
+                return super().rename(*args, **kwargs)
+
+            if self.__observer.logger:
                 message = "{v}.rename({p})"
                 __v = self.__variable
                 __a = list(args) + [f"{k}={v}" for k, v in kwargs.items()]
                 __p = f"{', '.join(__a)}"
-                self.__manager.logger.debug(message.format(v=__v, p=__p))
+                self.__observer.logger.debug(message.format(v=__v, p=__p))
             return super().rename(*args, **kwargs)
 
         def drop(self, *args, **kwargs):
-            if self.__manager.logger:
+            if self.__observer is None:
+                return super().drop(*args, **kwargs)
+
+            if self.__observer.logger:
                 __v = self.__variable
                 __a = list(args) + [f"{k}={v}" for k, v in kwargs.items()]
                 __p = f"{', '.join(__a)}"
                 message = "{v}.drop({p})"
-                self.__manager.logger.debug(message.format(v=__v, p=__p))
+                self.__observer.logger.debug(message.format(v=__v, p=__p))
             return super().drop(*args, **kwargs)
 
-    _S = {list: ObservableList}
-    _M = {dict: ObservableDict}
-    _F = {DataFrame: ObservableDataFrame}
+    _ObservableSequences = {list: ObservableList, ObservableList: ObservableList}
+    _ObservableMappings = {dict: ObservableDict, ObservableDict: ObservableDict}
+    _ObservableFrames = {
+        DataFrame: ObservableDataFrame,
+        ObservableDataFrame: ObservableDataFrame,
+    }
 
     def __init__(self, **kwargs):
 
-        for key, value in kwargs.items():
-            if key.startswith("_"):
-                continue
-            kwargs[key] = self.wrap(
-                manager=self,
-                variable=key,
-                value=value,
-            )
+        for key, value in [(k, v) for k, v in kwargs.items() if not k.startswith("_")]:
+            kwargs[key] = self.wrap(value=value, observer=self, variable=key)
         super().__init__(**kwargs)
 
     def __setattr__(self, name, value):
-        value = self.wrap(
-            manager=self,
-            variable=name,
-            value=value,
-        )
+        value = self.wrap(value=value, observer=self, variable=name)
         if hasattr(self, "logger"):
             self.logger.debug(f"{name} = {value}")
         super().__setattr__(name, value)
