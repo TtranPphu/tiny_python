@@ -6,6 +6,7 @@ from ..utils import (
 
 from logging import Logger, Handler, Formatter, getLogger as get_logger
 from pandas import DataFrame
+from pandas.core.indexing import _LocIndexer, _iLocIndexer
 from typing import Optional
 
 
@@ -142,18 +143,21 @@ class WillLogAttrChanges(HasLogger):
             CustomMapping = cls._ObservableMappings[__type]
             __log(CustomMapping.__name__)
             return CustomMapping(**value, observer=observer, variable=variable)
+
         elif __type in cls._ObservableFrames:
             for c, v in value.items():
                 value[c] = cls.wrap(observer, f"{variable}[{c}]", v)
             CustomFrame = cls._ObservableFrames[__type]
             __log(CustomFrame.__name__)
             return CustomFrame(value, observer=observer, variable=variable)
+
         elif __type in cls._ObservableSequences:
             for i, v in enumerate(value):
                 value[i] = cls.wrap(v, observer, f"{variable}[{i}]")
             CustomSequence = cls._ObservableSequences[__type]
             __log(CustomSequence.__name__)
             return CustomSequence(*value, observer=observer, variable=variable)
+
         return value
 
     class ObservableList(list):
@@ -213,8 +217,40 @@ class WillLogAttrChanges(HasLogger):
                 self.__observer.logger.debug(f"{self.__variable}[{key}] = {value}")
             return super().__setitem__(key, value)
 
+    class _ObservableIndexerBase:
+        __observer: Optional["WillLogAttrChanges"]
+
+        def __init__(self, *args, **kwargs):
+            self.__observer = kwargs.pop("observer", None)
+            self.__variable = kwargs.pop("variable", r"_")
+            super().__init__(*args, **kwargs)
+
+        def _wrap_and_log(self, key, value, kind: str):
+            if self.__observer is None:
+                return value
+
+            target = f"{self.__variable}.{kind}[{key}]"
+            __wp = {"value": value, "observer": self.__observer, "variable": target}
+            value = self.__observer.wrap(**__wp)
+
+            if hasattr(self.__observer, "logger"):
+                self.__observer.logger.debug(f"{target} = {value}")
+
+            return value
+
+    class _ObservableLocIndexer(_ObservableIndexerBase, _LocIndexer):
+        def __setitem__(self, key, value):
+            value = self._wrap_and_log(key=key, value=value, kind="loc")
+            return super().__setitem__(key, value)
+
+    class _ObservableILocIndexer(_ObservableIndexerBase, _iLocIndexer):
+        def __setitem__(self, key, value):
+            value = self._wrap_and_log(key=key, value=value, kind="iloc")
+            return super().__setitem__(key, value)
+
     class ObservableDataFrame(DataFrame):
         __observer: Optional["WillLogAttrChanges"]
+        __variable: str
         _metadata = [
             "_ObservableDataFrame__observer",
             "_ObservableDataFrame__variable",
@@ -224,8 +260,6 @@ class WillLogAttrChanges(HasLogger):
             __observer = kwargs.pop("observer", None)
             __variable = kwargs.pop("variable", r"_")
             super().__init__(*args, **kwargs)
-            # DataFrame base class NDFrame also overrides __setattr__,
-            #   so we need to call object.__setattr__ dirrectly to bypass that
             object.__setattr__(self, "_ObservableDataFrame__observer", __observer)
             object.__setattr__(self, "_ObservableDataFrame__variable", __variable)
 
@@ -237,6 +271,16 @@ class WillLogAttrChanges(HasLogger):
         @property
         def _constructor(self):
             return WillLogAttrChanges.ObservableDataFrame
+
+        @property
+        def loc(self):
+            __p = {"observer": self.__observer, "variable": self.__variable}
+            return WillLogAttrChanges._ObservableLocIndexer("loc", self, **__p)
+
+        @property
+        def iloc(self):
+            __p = {"observer": self.__observer, "variable": self.__variable}
+            return WillLogAttrChanges._ObservableILocIndexer("iloc", self, **__p)
 
         def isetitem(self, loc, value):
             if self.__observer is None:
