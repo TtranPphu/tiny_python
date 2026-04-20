@@ -128,10 +128,10 @@ class WillLogAttrChanges(HasLogger):
 
     @classmethod
     def wrap(cls, value, observer: "WillLogAttrChanges", variable: str):
-        def __log(t):
+        def __log(type_name: str):
             msg = (
                 f"Wrapping {variable} as "
-                f"{t}(observer={observer.__class__.__name__}<{id(observer)}>)"
+                f"{type_name}(observer={observer.__class__.__name__}<{id(observer)}>)"
             )
             if hasattr(observer, "logger"):
                 observer.logger.debug(msg)
@@ -141,21 +141,21 @@ class WillLogAttrChanges(HasLogger):
             for k, v in value.items():
                 value[k] = cls.wrap(v, observer, f"{variable}[{k}]")
             CustomMapping = cls._ObservableMappings[__type]
-            __log(CustomMapping.__name__)
+            __log(type_name=CustomMapping.__name__)
             return CustomMapping(**value, observer=observer, variable=variable)
 
         elif __type in cls._ObservableFrames:
             for c, v in value.items():
                 value[c] = cls.wrap(observer, f"{variable}[{c}]", v)
             CustomFrame = cls._ObservableFrames[__type]
-            __log(CustomFrame.__name__)
+            __log(type_name=CustomFrame.__name__)
             return CustomFrame(value, observer=observer, variable=variable)
 
         elif __type in cls._ObservableSequences:
             for i, v in enumerate(value):
                 value[i] = cls.wrap(v, observer, f"{variable}[{i}]")
             CustomSequence = cls._ObservableSequences[__type]
-            __log(CustomSequence.__name__)
+            __log(type_name=CustomSequence.__name__)
             return CustomSequence(*value, observer=observer, variable=variable)
 
         return value
@@ -172,28 +172,30 @@ class WillLogAttrChanges(HasLogger):
             if self.__observer is None:
                 return super().__setitem__(index, value)
 
+            __variable = f"{self.__variable}[{index}]"
             value = self.__observer.wrap(
                 value=value,
                 observer=self.__observer,
-                variable=f"{self.__variable}[{index}]",
+                variable=__variable,
             )
             if hasattr(self.__observer, "logger"):
-                self.__observer.logger.debug(f"{self.__variable}[{index}] = {value}")
+                self.__observer.logger.debug(f"{__variable} = {value}")
             return super().__setitem__(index, value)
 
         def append(self, value):
             if self.__observer is None:
                 return super().append(value)
 
+            __variable = f"{self.__variable}[{len(self)}]"
             value = self.__observer.wrap(
                 value=value,
                 observer=self.__observer,
-                variable=f"{self.__variable}[{len(self)}]",
+                variable=__variable,
             )
+
             if hasattr(self.__observer, "logger"):
-                self.__observer.logger.debug(
-                    f"{self.__variable}[{len(self)}] = {value}"
-                )
+                self.__observer.logger.debug(f"{__variable} = {value}")
+
             return super().append(value)
 
     class ObservableDict(dict):
@@ -213,8 +215,10 @@ class WillLogAttrChanges(HasLogger):
                 observer=self.__observer,
                 variable=f"{self.__variable}[{key}]",
             )
+
             if hasattr(self.__observer, "logger"):
                 self.__observer.logger.debug(f"{self.__variable}[{key}] = {value}")
+
             return super().__setitem__(key, value)
 
     class _ObservableIndexerBase:
@@ -291,8 +295,10 @@ class WillLogAttrChanges(HasLogger):
                 observer=self.__observer,
                 variable=f"{self.__variable}[{loc}]",
             )
+
             if hasattr(self.__observer, "logger"):
                 self.__observer.logger.debug(f"{self.__variable}[{loc}] = {value}")
+
             return super().isetitem(loc, value)
 
         def __setitem__(self, key, value):
@@ -304,8 +310,10 @@ class WillLogAttrChanges(HasLogger):
                 observer=self.__observer,
                 variable=f"{self.__variable}[{key}]",
             )
+
             if hasattr(self.__observer, "logger"):
                 self.__observer.logger.debug(f"{self.__variable}[{key}] = {value}")
+
             super().__setitem__(key, value)
 
         def rename(self, *args, **kwargs):
@@ -318,6 +326,7 @@ class WillLogAttrChanges(HasLogger):
                 __a = list(args) + [f"{k}={v}" for k, v in kwargs.items()]
                 __p = f"{', '.join(__a)}"
                 self.__observer.logger.debug(message.format(v=__v, p=__p))
+
             return super().rename(*args, **kwargs)
 
         def drop(self, *args, **kwargs):
@@ -330,10 +339,17 @@ class WillLogAttrChanges(HasLogger):
                 __p = f"{', '.join(__a)}"
                 message = "{v}.drop({p})"
                 self.__observer.logger.debug(message.format(v=__v, p=__p))
+
             return super().drop(*args, **kwargs)
 
-    _ObservableSequences = {list: ObservableList, ObservableList: ObservableList}
-    _ObservableMappings = {dict: ObservableDict, ObservableDict: ObservableDict}
+    _ObservableSequences = {
+        list: ObservableList,
+        ObservableList: ObservableList,
+    }
+    _ObservableMappings = {
+        dict: ObservableDict,
+        ObservableDict: ObservableDict,
+    }
     _ObservableFrames = {
         DataFrame: ObservableDataFrame,
         ObservableDataFrame: ObservableDataFrame,
