@@ -33,9 +33,9 @@ class DefaultLogger(Logger):
 class HasLogger:
     logger: Logger
 
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
         self.__setup()
-        super().__init__(**kwargs)
+        super().__init__(*args, **kwargs)
 
     def __setup(self):
         fsm.ensure_dir_exists(self._log_folder())
@@ -355,11 +355,11 @@ class WillLogAttrChanges(HasLogger):
         ObservableDataFrame: ObservableDataFrame,
     }
 
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
 
         for key, value in [(k, v) for k, v in kwargs.items() if not k.startswith("_")]:
             kwargs[key] = self.wrap(value=value, observer=self, variable=key)
-        super().__init__(**kwargs)
+        super().__init__(*args, **kwargs)
 
     def __setattr__(self, name, value):
         value = self.wrap(value=value, observer=self, variable=name)
